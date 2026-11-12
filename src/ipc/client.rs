@@ -525,6 +525,15 @@ pub fn handle_msg(mut msg: Msg, json: bool, print_request: bool) -> anyhow::Resu
                     Event::TouchpadToggled { on } => {
                         println!("Touchpad enabled: {on}");
                     }
+                    Event::OutputsChanged { outputs } => {
+                        println!("Outputs changed: {outputs:?}")
+                    }
+                    Event::OutputAddedOrChanged { output } => {
+                        println!("Output added or changed: {output:?}");
+                    }
+                    Event::OutputRemoved { name } => {
+                        println!("Output removed: {name}");
+                    }
                 }
             }
         }

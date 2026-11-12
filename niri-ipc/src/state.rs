@@ -9,7 +9,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
-use crate::{Cast, Event, KeyboardLayouts, Window, Workspace};
+use crate::{Cast, Event, KeyboardLayouts, Output, Window, Workspace};
 
 /// Part of the state communicated via the event stream.
 pub trait EventStreamStatePart {
@@ -52,6 +52,9 @@ pub struct EventStreamState {
 
     /// State of touchpads.
     pub touchpad: TouchpadState,
+
+    /// State of outputs.
+    pub outputs: OutputState,
 }
 
 /// The workspaces state communicated over the event stream.
@@ -108,6 +111,13 @@ pub struct TouchpadState {
     pub on: bool,
 }
 
+/// The outputs state communicated over the event stream.
+#[derive(Debug, Default)]
+pub struct OutputState {
+    /// Map from a output name to the output.
+    pub outputs: HashMap<String, Output>,
+}
+
 impl EventStreamStatePart for EventStreamState {
     fn replicate(&self) -> Vec<Event> {
         let mut events = Vec::new();
@@ -118,6 +128,7 @@ impl EventStreamStatePart for EventStreamState {
         events.extend(self.config.replicate());
         events.extend(self.casts.replicate());
         events.extend(self.touchpad.replicate());
+        events.extend(self.outputs.replicate());
         events
     }
 
@@ -129,6 +140,7 @@ impl EventStreamStatePart for EventStreamState {
         let event = self.config.apply(event)?;
         let event = self.casts.apply(event)?;
         let event = self.touchpad.apply(event)?;
+        let event = self.outputs.apply(event)?;
         Some(event)
     }
 }
@@ -351,6 +363,41 @@ impl EventStreamStatePart for TouchpadState {
             }
             event => return Some(event),
         }
+        None
+    }
+}
+
+impl EventStreamStatePart for OutputState {
+    fn replicate(&self) -> Vec<Event> {
+        let outputs = self.outputs.values().cloned().collect();
+        vec![Event::OutputsChanged { outputs }]
+    }
+
+    fn apply(&mut self, event: Event) -> Option<Event> {
+        match event {
+            Event::OutputsChanged { outputs } => {
+                self.outputs = outputs
+                    .into_iter()
+                    .map(|output| (output.name.clone(), output))
+                    .collect();
+            }
+            Event::OutputAddedOrChanged { output } => match self.outputs.entry(output.name.clone())
+            {
+                Entry::Occupied(mut entry) => {
+                    let entry = entry.get_mut();
+                    *entry = output;
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(output);
+                }
+            },
+            Event::OutputRemoved { name } => {
+                let out = self.outputs.remove(&name);
+                out.expect("removed output was missing from the map");
+            }
+            event => return Some(event),
+        }
+
         None
     }
 }

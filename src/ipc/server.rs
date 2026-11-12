@@ -1029,4 +1029,48 @@ impl State {
         state.apply(event.clone());
         server.send_event(event);
     }
+
+    pub fn ipc_refresh_outputs(&mut self) {
+        let Some(server) = &self.niri.ipc_server else {
+            return;
+        };
+
+        let _span = tracy_client::span!("State::ipc_refresh_outputs");
+
+        let mut state = server.event_stream_state.borrow_mut();
+        let state = &mut state.outputs;
+
+        let mut events = Vec::new();
+
+        let mut seen = HashSet::new();
+
+        let ipc_outputs = self.backend.ipc_outputs().lock().unwrap().clone();
+        for output in ipc_outputs.values() {
+            seen.insert(output.name.clone());
+
+            let Some(state_output) = state.outputs.get(&output.name) else {
+                events.push(Event::OutputAddedOrChanged {
+                    output: output.clone(),
+                });
+                continue;
+            };
+
+            if state_output != output {
+                events.push(Event::OutputAddedOrChanged {
+                    output: output.clone(),
+                });
+            }
+        }
+
+        for (name, _) in &state.outputs {
+            if !seen.contains(name) {
+                events.push(Event::OutputRemoved { name: name.clone() });
+            };
+        }
+
+        for event in events {
+            state.apply(event.clone());
+            server.send_event(event);
+        }
+    }
 }

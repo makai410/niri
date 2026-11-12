@@ -902,6 +902,7 @@ impl State {
         self.niri.refresh_window_rules();
         self.refresh_ipc_outputs();
         self.ipc_refresh_layout();
+        self.ipc_refresh_outputs();
         self.ipc_refresh_keyboard_layout_index();
         self.ipc_refresh_touchpad();
 

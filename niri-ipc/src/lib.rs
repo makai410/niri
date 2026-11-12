@@ -1369,7 +1369,7 @@ pub struct VrrToSet {
 }
 
 /// Connected output.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Output {
     /// Name of the output.
@@ -1928,6 +1928,21 @@ pub enum Event {
         /// Note that this only indicates the [`Action::ToggleTouchpad`] state. The touchpad can be
         /// disabled in hardware, or via `input { touchpad { off; } }`—this is not reflected here.
         on: bool,
+    },
+    /// The output configuration has changed.
+    OutputsChanged {
+        /// The new output configuration.
+        outputs: Vec<Output>,
+    },
+    /// A new output is added, or an existing output changed.
+    OutputAddedOrChanged {
+        /// The new or updated output.
+        output: Output,
+    },
+    /// An output was removed.
+    OutputRemoved {
+        /// Name of the removed output.
+        name: String,
     },
 }
 
