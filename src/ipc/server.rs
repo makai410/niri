@@ -4,7 +4,6 @@ use std::ffi::OsStr;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 use std::{env, io, process};
 
 use anyhow::Context;
@@ -31,7 +30,6 @@ use smithay::reexports::rustix::fs::unlink;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::shell::wlr_layer::{KeyboardInteractivity, Layer};
 
-use crate::backend::IpcOutputMap;
 use crate::handlers::image_copy_capture::{source_mapped_id, source_output};
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
@@ -55,7 +53,6 @@ pub struct IpcServer {
 struct ClientCtx {
     event_loop: LoopHandle<'static, State>,
     scheduler: Scheduler<()>,
-    ipc_outputs: Arc<Mutex<IpcOutputMap>>,
     event_streams: Rc<RefCell<Vec<EventStreamSender>>>,
     event_stream_state: Rc<RefCell<EventStreamState>>,
 }
@@ -171,7 +168,6 @@ fn on_new_ipc_client(state: &mut State, stream: UnixStream) {
     let ctx = ClientCtx {
         event_loop: state.niri.event_loop.clone(),
         scheduler: state.niri.scheduler.clone(),
-        ipc_outputs: state.backend.ipc_outputs(),
         event_streams: ipc_server.event_streams.clone(),
         event_stream_state: ipc_server.event_stream_state.clone(),
     };
@@ -275,9 +271,9 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         Request::ReturnError => return Err(String::from("example compositor error")),
         Request::Version => Response::Version(version()),
         Request::Outputs => {
-            let ipc_outputs = ctx.ipc_outputs.lock().unwrap().clone();
-            let outputs = ipc_outputs.values().cloned().map(|o| (o.name.clone(), o));
-            Response::Outputs(outputs.collect())
+            let state = ctx.event_stream_state.borrow();
+            let outputs = state.outputs.outputs.clone();
+            Response::Outputs(outputs)
         }
         Request::Workspaces => {
             let state = ctx.event_stream_state.borrow();
@@ -404,9 +400,9 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
         }
         Request::Output { output, action } => {
             action.validate()?;
-
-            let ipc_outputs = ctx.ipc_outputs.lock().unwrap();
-            let found = ipc_outputs
+            let state = ctx.event_stream_state.borrow();
+            let outputs = &state.outputs.outputs;
+            let found = outputs
                 .values()
                 .any(|o| OutputName::from_ipc_output(o).matches(&output));
             let response = if found {
@@ -414,7 +410,6 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             } else {
                 OutputConfigChanged::OutputWasMissing
             };
-            drop(ipc_outputs);
 
             ctx.event_loop.insert_idle(move |state| {
                 state.apply_transient_output_config(&output, action);
@@ -1044,8 +1039,7 @@ impl State {
 
         let mut seen = HashSet::new();
 
-        let ipc_outputs = self.backend.ipc_outputs().lock().unwrap().clone();
-        for output in ipc_outputs.values() {
+        for output in self.backend.ipc_outputs().lock().unwrap().values() {
             seen.insert(output.name.clone());
 
             let Some(state_output) = state.outputs.get(&output.name) else {
